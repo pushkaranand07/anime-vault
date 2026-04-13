@@ -209,6 +209,11 @@ const useAnimeStore = create<AnimeStore>((set, get) => ({
     const { anime, filters, sortOption } = state;
 
     let filtered = anime.filter((item) => {
+      // Exclude hentai anime
+      if (item.genres?.some((g) => g.toLowerCase() === 'hentai')) {
+        return false;
+      }
+      
       // Status filter - only apply if explicitly set (not undefined/null)
       if (filters.status !== undefined && filters.status !== null) {
         if (item.status !== filters.status) return false;

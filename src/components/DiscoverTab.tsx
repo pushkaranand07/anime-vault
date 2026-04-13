@@ -69,7 +69,9 @@ export function DiscoverTab({ onAddToWatchlist }: Props) {
     setAddedIds((prev) => new Set(prev).add(item.mal_id));
   };
 
-  const displayList = searchResults.length > 0 ? searchResults : discoverAnime;
+  const displayList = (searchResults.length > 0 ? searchResults : discoverAnime).filter(
+    (item) => !item.genres?.some((g) => g.toLowerCase() === 'hentai')
+  );
 
   return (
     <div className="space-y-6">
