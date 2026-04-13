@@ -150,12 +150,17 @@ const useAnimeStore = create<AnimeStore>((set, get) => ({
         method: 'DELETE',
         headers: { 'x-user-id': userId }
       });
-      if (!res.ok) throw new Error('Failed to delete anime');
+      // Treat 404 (Not Found) as a success since the goal is deletion
+      if (!res.ok && res.status !== 404) throw new Error('Failed to delete anime');
     } catch (err: any) {
       console.error(err);
       // Rollback
       set({ anime: prevAnime, selectedAnime: prevSelected, showDetailDrawer: prevShowModal });
-      alert('Failed to delete anime');
+      
+      if (typeof window !== 'undefined') {
+        const event = new CustomEvent('system-toast', { detail: { message: 'Failed to delete anime', type: 'error' } });
+        window.dispatchEvent(event);
+      }
     }
   },
 

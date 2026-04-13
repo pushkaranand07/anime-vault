@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { ToastContainer, ToastMessage, ToastType } from '@/components/Toast';
 
 interface ToastContextType {
@@ -23,6 +23,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const removeToast = (id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
+
+  useEffect(() => {
+    const handleGlobalToast = (e: any) => {
+      if (e.detail?.message) {
+        toast(e.detail.message, e.detail.type || 'error');
+      }
+    };
+    window.addEventListener('system-toast', handleGlobalToast);
+    return () => window.removeEventListener('system-toast', handleGlobalToast);
+  }, []);
 
   return (
     <ToastContext.Provider value={{ toast }}>
