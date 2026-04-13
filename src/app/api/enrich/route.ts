@@ -1,35 +1,5 @@
 import { NextResponse } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
-
-function getDbPath(userId: string | null) {
-  if (userId) {
-    return path.join(process.cwd(), 'data', 'users', userId, 'db.json');
-  }
-  return path.join(process.cwd(), 'data', 'db.json');
-}
-
-async function getDb(userId: string | null) {
-  const p = getDbPath(userId);
-  try {
-    const data = await fs.readFile(p, 'utf8');
-    return JSON.parse(data);
-  } catch {
-    return { anime: [] };
-  }
-}
-
-async function saveDb(userId: string | null, data: any) {
-  const p = getDbPath(userId);
-  try {
-    await fs.mkdir(path.dirname(p), { recursive: true });
-    await fs.writeFile(p, JSON.stringify(data, null, 2), 'utf8');
-    return true;
-  } catch (error) {
-    console.error('Failed to save DB', error);
-    return false;
-  }
-}
+import { getAnimeCollection } from '@/lib/mongodb';
 
 async function searchJikanByTitle(title: string): Promise<string | null> {
   try {
@@ -62,35 +32,49 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function POST(request: Request) {
   const userId = request.headers.get('x-user-id');
-  const db = await getDb(userId);
-  const missing = db.anime.filter(
-    (a: any) => !a.imageUrl || a.imageUrl.trim() === ''
-  );
-
-  let enriched = 0;
-  const failed: string[] = [];
-
-  for (let i = 0; i < missing.length; i++) {
-    const anime = missing[i];
-    const imageUrl = await searchJikanByTitle(anime.name);
-
-    if (imageUrl) {
-      const idx = db.anime.findIndex((a: any) => a.id === anime.id);
-      if (idx !== -1) {
-        db.anime[idx].imageUrl = imageUrl;
-        enriched++;
-      }
-    } else {
-      failed.push(anime.name);
-    }
-
-    // Respect Jikan rate limit: ~3 req/s → 400ms between requests
-    if (i < missing.length - 1) {
-      await delay(400);
-    }
+  if (!userId) {
+    return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
   }
 
-  await saveDb(userId, db);
+  try {
+    const collection = await getAnimeCollection(userId);
 
-  return NextResponse.json({ enriched, failed, total: missing.length });
+    // Find anime entries belonging to this user that have no image
+    const missing = await collection.find({
+      userId,
+      $or: [
+        { imageUrl: { $exists: false } },
+        { imageUrl: '' },
+        { imageUrl: null },
+      ],
+    }).toArray();
+
+    let enriched = 0;
+    const failed: string[] = [];
+
+    for (let i = 0; i < missing.length; i++) {
+      const anime = missing[i];
+      const imageUrl = await searchJikanByTitle(anime.name);
+
+      if (imageUrl) {
+        await collection.updateOne(
+          { _id: anime._id, userId },
+          { $set: { imageUrl } }
+        );
+        enriched++;
+      } else {
+        failed.push(anime.name);
+      }
+
+      // Respect Jikan rate limit: ~3 req/s → 400ms between requests
+      if (i < missing.length - 1) {
+        await delay(400);
+      }
+    }
+
+    return NextResponse.json({ enriched, failed, total: missing.length });
+  } catch (err) {
+    console.error('POST /api/enrich error:', err);
+    return NextResponse.json({ error: 'Enrichment failed' }, { status: 500 });
+  }
 }
