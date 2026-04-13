@@ -16,6 +16,8 @@ import {
 import useAnimeStore from '@/store';
 import { parseXlsxFile, exportAsXlsx } from '@/lib/utils';
 import { useRef } from 'react';
+import { UserBadge } from './UserBadge';
+import { useToast } from '@/context/ToastContext';
 
 interface HeaderProps {
   onAddClick: () => void;
@@ -37,6 +39,7 @@ export function Header({ onAddClick }: HeaderProps) {
   const activeTab = useAnimeStore((s) => s.activeTab);
   const setActiveTab = useAnimeStore((s) => s.setActiveTab);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -44,23 +47,28 @@ export function Header({ onAddClick }: HeaderProps) {
     try {
       const imported = await parseXlsxFile(file);
       setAnime([...anime, ...imported]);
-      alert(`✓ Imported ${imported.length} anime entries!`);
+      toast(`Imported ${imported.length} anime entries!`, 'success');
     } catch {
-      alert('Failed to import. Check the file format.');
+      toast('Failed to import. Check the file format.', 'error');
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleExport = () => {
-    if (anime.length === 0) return alert('Nothing to export!');
+    if (anime.length === 0) return toast('Nothing to export!', 'error');
     exportAsXlsx(anime);
+    toast('Watchlist exported successfully!', 'success');
   };
 
   const handleEnrich = async () => {
     const missing = anime.filter((a) => !a.imageUrl);
-    if (missing.length === 0) return alert('All anime already have images!');
+    if (missing.length === 0) return toast('All anime already have images!', 'info');
     const r = await enrichMissingImages();
-    alert(`✓ Fetched images for ${r.enriched} anime${r.failed.length > 0 ? `\n✗ Failed: ${r.failed.slice(0, 5).join(', ')}` : ''}`);
+    if (r.failed.length > 0) {
+      toast(`Fetched ${r.enriched} images. Failed: ${r.failed.length}`, 'error');
+    } else {
+      toast(`Fetched ${r.enriched} images successfully!`, 'success');
+    }
   };
 
   return (
@@ -85,7 +93,7 @@ export function Header({ onAddClick }: HeaderProps) {
           </motion.div>
 
           {/* Tab Navigation */}
-          <nav className="flex items-center gap-1 bg-white/3 border border-white/5 rounded-xl p-1">
+          <nav className="flex items-center gap-1 bg-white/3 border border-white/5 rounded-xl p-1 hidden sm:flex">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
@@ -97,28 +105,27 @@ export function Header({ onAddClick }: HeaderProps) {
                 }`}
               >
                 {tab.icon}
-                <span className="hidden sm:inline">{tab.label}</span>
+                <span>{tab.label}</span>
               </button>
             ))}
           </nav>
 
           {/* Controls */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            <UserBadge />
             {/* Auto-fetch images */}
             <button
               onClick={handleEnrich}
               disabled={isEnriching}
               title="Auto-fetch missing poster images"
-              className="btn-ghost px-3 py-2 hidden md:flex items-center gap-1.5 text-xs"
+              className="btn-ghost px-3 py-2 hidden lg:flex items-center gap-1.5 text-xs"
             >
               {isEnriching ? (
                 <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
               ) : (
                 <Sparkles className="w-4 h-4 text-violet-400" />
               )}
-              <span className="hidden lg:inline">
-                {isEnriching ? 'Fetching…' : 'Auto Images'}
-              </span>
+              <span>{isEnriching ? 'Fetching…' : 'Auto Images'}</span>
             </button>
 
             {/* View toggle — only on watchlist tab */}
@@ -140,7 +147,7 @@ export function Header({ onAddClick }: HeaderProps) {
             <button
               onClick={() => fileInputRef.current?.click()}
               title="Import XLSX"
-              className="btn-ghost p-2"
+              className="btn-ghost p-2 hidden sm:flex"
             >
               <Upload className="w-4 h-4" />
             </button>
@@ -153,7 +160,7 @@ export function Header({ onAddClick }: HeaderProps) {
             />
 
             {/* Export */}
-            <button onClick={handleExport} title="Export XLSX" className="btn-ghost p-2">
+            <button onClick={handleExport} title="Export XLSX" className="btn-ghost p-2 hidden sm:flex">
               <Download className="w-4 h-4" />
             </button>
 
@@ -167,6 +174,8 @@ export function Header({ onAddClick }: HeaderProps) {
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Add Anime</span>
             </motion.button>
+
+            {/* Mobile Tab Nav button if needed, omit for brevity, user can switch on larger screen or we can show icons */}
           </div>
         </div>
       </div>

@@ -1,22 +1,39 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Header } from '@/components/Header';
 import { AnimeCard } from '@/components/AnimeCard';
-import { AnimeModal } from '@/components/AnimeModal';
-import { AnimeDetailDrawer } from '@/components/AnimeDetailDrawer';
+import { AnimeListRow } from '@/components/AnimeListRow';
 import { Filters } from '@/components/Filters';
 import { SkeletonCard } from '@/components/SkeletonCard';
-import { DiscoverTab } from '@/components/DiscoverTab';
-import { StatsTab } from '@/components/StatsTab';
+import { LoginScreen } from '@/components/LoginScreen';
+import { ConfirmModal } from '@/components/ConfirmModal';
+import { useUser } from '@/context/UserContext';
+import { useToast } from '@/context/ToastContext';
 import useAnimeStore from '@/store';
 import { AnimeEntry } from '@/types';
 import { Grid3x3, List, Plus, Tv2 } from 'lucide-react';
 
+const AnimeModal = dynamic(() => import('@/components/AnimeModal').then(m => m.AnimeModal), { ssr: false });
+const AnimeDetailDrawer = dynamic(() => import('@/components/AnimeDetailDrawer').then(m => m.AnimeDetailDrawer), { ssr: false });
+const DiscoverTab = dynamic(() => import('@/components/DiscoverTab').then(m => m.DiscoverTab), { 
+  ssr: false,
+  loading: () => <div className="p-20 text-center text-slate-500 animate-pulse">Loading Discover...</div>
+});
+const StatsTab = dynamic(() => import('@/components/StatsTab').then(m => m.StatsTab), { 
+  ssr: false,
+  loading: () => <div className="p-20 text-center text-slate-500 animate-pulse">Loading Stats...</div>
+});
+
 export default function Home() {
+  const { userId, isLoaded } = useUser();
+  const { toast } = useToast();
+  
   const [isMounted, setIsMounted] = useState(false);
   const [editingAnime, setEditingAnime] = useState<AnimeEntry | undefined>();
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const showModal = useAnimeStore((s) => s.showModal);
   const setShowModal = useAnimeStore((s) => s.setShowModal);
@@ -32,13 +49,23 @@ export default function Home() {
   const filters = useAnimeStore((s) => s.filters);
   const sortOption = useAnimeStore((s) => s.sortOption);
 
-  // Memoize filtered anime to prevent unnecessary re-computation
   const filteredAnime = useMemo(() => getFilteredAndSortedAnime(), [allAnime, filters, sortOption, getFilteredAndSortedAnime]);
 
   useEffect(() => {
     setIsMounted(true);
-    fetchAnime();
   }, []);
+
+  useEffect(() => {
+    if (userId) {
+      fetchAnime();
+    }
+  }, [userId, fetchAnime]);
+
+  if (!isMounted || !isLoaded) return null;
+
+  if (!userId) {
+    return <LoginScreen />;
+  }
 
   const handleAddClick = () => {
     setEditingAnime(undefined);
@@ -46,17 +73,17 @@ export default function Home() {
     setShowModal(true);
   };
 
-
   const handleEdit = (anime: AnimeEntry) => {
     setEditingAnime(anime);
     setEditingId(anime.id);
     setShowModal(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Remove this anime from your list?')) {
-      deleteAnime(id);
-    }
+  const confirmDelete = async () => {
+    if (!deleteConfirmId) return;
+    setDeleteConfirmId(null);
+    await deleteAnime(deleteConfirmId);
+    toast('Anime removed from watchlist', 'success');
   };
 
   const handleCloseModal = () => {
@@ -67,9 +94,8 @@ export default function Home() {
 
   const handleAddFromDiscover = async (anime: AnimeEntry) => {
     await addAnime(anime);
+    toast(`Added ${anime.name} to your watchlist!`, 'success');
   };
-
-  if (!isMounted) return null;
 
   return (
     <div className="min-h-screen">
@@ -86,19 +112,16 @@ export default function Home() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25 }}
             >
-              {/* Filters */}
               <div className="mb-6">
                 <Filters />
               </div>
 
-              {/* Loading skeletons */}
               {isLoading && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
                 </div>
               )}
 
-              {/* Empty state */}
               {!isLoading && filteredAnime.length === 0 && (
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -122,10 +145,8 @@ export default function Home() {
                 </motion.div>
               )}
 
-              {/* Results */}
               {!isLoading && filteredAnime.length > 0 && (
                 <>
-                  {/* Results info */}
                   <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-2 text-sm text-slate-400">
                       <Tv2 className="w-4 h-4 text-violet-400" />
@@ -140,7 +161,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Grid View */}
                   {viewMode === 'grid' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                       <AnimatePresence>
@@ -156,88 +176,22 @@ export default function Home() {
                             <AnimeCard
                               anime={anime}
                               onEdit={handleEdit}
-                              onDelete={handleDelete}
+                              onDelete={setDeleteConfirmId}
                             />
                           </motion.div>
                         ))}
                       </AnimatePresence>
                     </div>
                   ) : (
-                    /* List View */
                     <div className="space-y-3">
                       <AnimatePresence>
                         {filteredAnime.map((anime) => (
-                          <motion.div
-                            key={anime.id}
-                            layout
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 20 }}
-                            transition={{ duration: 0.2 }}
-                            className="glass-card rounded-2xl p-4 flex items-center gap-4 cursor-pointer"
-                            onClick={() => {
-                              useAnimeStore.getState().setSelectedAnime(anime);
-                              useAnimeStore.getState().setShowDetailDrawer(true);
-                            }}
-                          >
-                            {/* Poster */}
-                            <div className="w-14 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-slate-800">
-                              {anime.imageUrl ? (
-                                <img 
-                                  src={anime.imageUrl} 
-                                  alt={anime.name} 
-                                  className="w-full h-full object-cover" 
-                                  loading="lazy" 
-                                  onError={(e) => {
-                                    e.currentTarget.onerror = null;
-                                    e.currentTarget.src = 'https://placehold.co/100x150/1e2238/w?text=No+Img';
-                                  }}
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-2xl bg-gradient-to-br from-violet-900/40 to-slate-900">🎬</div>
-                              )}
-                            </div>
-
-                            {/* Info */}
-                            <div className="flex-1 min-w-0">
-                              <h3 className="font-bold text-slate-100 truncate">{anime.name}</h3>
-                              <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 flex-wrap">
-                                <span className="text-amber-400 font-semibold">⭐ {anime.rating.toFixed(1)}</span>
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${anime.status === 'watching' ? 'badge-watching' : anime.status === 'completed' ? 'badge-completed' : 'badge-planned'}`}>
-                                  {anime.status}
-                                </span>
-                                {anime.isOngoing && <span className="text-amber-500 font-medium">LIVE</span>}
-                                {anime.episodes && (
-                                  <span>{anime.episodesWatched || 0}/{anime.episodes} eps</span>
-                                )}
-                              </div>
-                              {anime.genres && anime.genres.length > 0 && (
-                                <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                                  {anime.genres.slice(0, 3).map(g => (
-                                    <span key={g} className="text-xs bg-violet-500/10 border border-violet-500/20 text-violet-300 px-2 py-0.5 rounded-full">{g}</span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Buttons */}
-                            <div className="flex gap-2 flex-shrink-0">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleEdit(anime); }}
-                                className="btn-ghost p-2 rounded-xl"
-                                title="Edit"
-                              >
-                                ✏️
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDelete(anime.id); }}
-                                className="btn-danger p-2 rounded-xl"
-                                title="Delete"
-                              >
-                                🗑️
-                              </button>
-                            </div>
-                          </motion.div>
+                          <AnimeListRow 
+                            key={anime.id} 
+                            anime={anime} 
+                            onEdit={handleEdit} 
+                            onDelete={setDeleteConfirmId} 
+                          />
                         ))}
                       </AnimatePresence>
                     </div>
@@ -275,11 +229,16 @@ export default function Home() {
         </AnimatePresence>
       </main>
 
-      {/* Modal */}
-      <AnimeModal isOpen={showModal} onClose={handleCloseModal} initialData={editingAnime} />
+      <ConfirmModal
+        isOpen={!!deleteConfirmId}
+        title="Delete Anime"
+        message="Are you sure you want to remove this anime from your watchlist? This action cannot be undone."
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
 
-      {/* Detail Drawer */}
-      <AnimeDetailDrawer onEdit={handleEdit} onDelete={handleDelete} />
+      <AnimeModal isOpen={showModal} onClose={handleCloseModal} initialData={editingAnime} />
+      <AnimeDetailDrawer onEdit={handleEdit} onDelete={setDeleteConfirmId} />
     </div>
   );
 }

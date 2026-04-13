@@ -2,21 +2,28 @@ import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
 
-const dbPath = path.join(process.cwd(), 'data', 'db.json');
+function getDbPath(userId: string | null) {
+  if (userId) {
+    return path.join(process.cwd(), 'data', 'users', userId, 'db.json');
+  }
+  return path.join(process.cwd(), 'data', 'db.json');
+}
 
-async function getDb() {
+async function getDb(userId: string | null) {
+  const p = getDbPath(userId);
   try {
-    const data = await fs.readFile(dbPath, 'utf8');
+    const data = await fs.readFile(p, 'utf8');
     return JSON.parse(data);
   } catch {
     return { anime: [] };
   }
 }
 
-async function saveDb(data: any) {
+async function saveDb(userId: string | null, data: any) {
+  const p = getDbPath(userId);
   try {
-    await fs.mkdir(path.dirname(dbPath), { recursive: true });
-    await fs.writeFile(dbPath, JSON.stringify(data, null, 2), 'utf8');
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, JSON.stringify(data, null, 2), 'utf8');
     return true;
   } catch (error) {
     console.error('Failed to save DB', error);
@@ -53,8 +60,9 @@ async function searchJikanByTitle(title: string): Promise<string | null> {
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function POST() {
-  const db = await getDb();
+export async function POST(request: Request) {
+  const userId = request.headers.get('x-user-id');
+  const db = await getDb(userId);
   const missing = db.anime.filter(
     (a: any) => !a.imageUrl || a.imageUrl.trim() === ''
   );
@@ -82,7 +90,7 @@ export async function POST() {
     }
   }
 
-  await saveDb(db);
+  await saveDb(userId, db);
 
   return NextResponse.json({ enriched, failed, total: missing.length });
 }

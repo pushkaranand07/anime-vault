@@ -2,9 +2,10 @@
 
 import { useEffect, ReactNode } from 'react';
 import useAnimeStore from '@/store';
+import { UserProvider } from '@/context/UserContext';
+import { ToastProvider } from '@/context/ToastContext';
 
 export function Providers({ children }: { children: ReactNode }) {
-  const fetchAnime = useAnimeStore((state) => state.fetchAnime);
   const isDarkMode = useAnimeStore((state) => state.isDarkMode);
   const setDarkMode = useAnimeStore((state) => state.setDarkMode);
 
@@ -17,11 +18,6 @@ export function Providers({ children }: { children: ReactNode }) {
   }, [setDarkMode]);
 
   useEffect(() => {
-    // Fetch data from API on mount
-    fetchAnime();
-  }, [fetchAnime]);
-
-  useEffect(() => {
     // Update dark mode on document
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -30,5 +26,11 @@ export function Providers({ children }: { children: ReactNode }) {
     }
   }, [isDarkMode]);
 
-  return <>{children}</>;
+  return (
+    <ToastProvider>
+      <UserProvider>
+        {children}
+      </UserProvider>
+    </ToastProvider>
+  );
 }

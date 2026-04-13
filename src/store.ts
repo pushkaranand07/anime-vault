@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { AnimeEntry, DiscoverAnime, FilterOptions, SortOption } from './types';
+import { getUserId } from '@/lib/userSession';
 
 type Tab = 'watchlist' | 'discover' | 'stats';
 
@@ -77,9 +78,12 @@ const useAnimeStore = create<AnimeStore>((set, get) => ({
 
   // Actions
   fetchAnime: async () => {
+    const userId = getUserId() || '';
     set({ isLoading: true, error: null });
     try {
-      const res = await fetch('/api/anime');
+      const res = await fetch('/api/anime', {
+        headers: { 'x-user-id': userId }
+      });
       if (!res.ok) throw new Error('Failed to fetch anime');
       const data = await res.json();
       set({ anime: data, isLoading: false });
@@ -91,10 +95,11 @@ const useAnimeStore = create<AnimeStore>((set, get) => ({
   setAnime: (anime) => set({ anime }),
 
   addAnime: async (anime) => {
+    const userId = getUserId() || '';
     try {
       const res = await fetch('/api/anime', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
         body: JSON.stringify(anime),
       });
       if (!res.ok) throw new Error('Failed to add anime');
@@ -106,11 +111,12 @@ const useAnimeStore = create<AnimeStore>((set, get) => ({
   },
 
   updateAnime: async (id, updates) => {
+    const userId = getUserId() || '';
     try {
       const payload = { id, ...updates };
       const res = await fetch('/api/anime', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('Failed to update anime');
@@ -125,27 +131,48 @@ const useAnimeStore = create<AnimeStore>((set, get) => ({
   },
 
   deleteAnime: async (id) => {
+    const userId = getUserId() || '';
+    const state = get();
+    // Save current state for rollback
+    const prevAnime = [...state.anime];
+    const prevSelected = state.selectedAnime;
+    const prevShowModal = state.showDetailDrawer;
+
+    // Optimistically update
+    set((state) => ({
+      anime: state.anime.filter((item) => item.id !== id),
+      selectedAnime: state.selectedAnime?.id === id ? null : state.selectedAnime,
+      showDetailDrawer: state.selectedAnime?.id === id ? false : state.showDetailDrawer,
+    }));
+
     try {
-      const res = await fetch(`/api/anime?id=${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/anime?id=${id}`, { 
+        method: 'DELETE',
+        headers: { 'x-user-id': userId }
+      });
       if (!res.ok) throw new Error('Failed to delete anime');
-      set((state) => ({
-        anime: state.anime.filter((item) => item.id !== id),
-        selectedAnime: state.selectedAnime?.id === id ? null : state.selectedAnime,
-        showDetailDrawer: state.selectedAnime?.id === id ? false : state.showDetailDrawer,
-      }));
     } catch (err: any) {
       console.error(err);
+      // Rollback
+      set({ anime: prevAnime, selectedAnime: prevSelected, showDetailDrawer: prevShowModal });
+      alert('Failed to delete anime');
     }
   },
 
   enrichMissingImages: async () => {
+    const userId = getUserId() || '';
     set({ isEnriching: true });
     try {
-      const res = await fetch('/api/enrich', { method: 'POST' });
+      const res = await fetch('/api/enrich', { 
+        method: 'POST',
+        headers: { 'x-user-id': userId }
+      });
       if (!res.ok) throw new Error('Enrichment failed');
       const result = await res.json();
       // Re-fetch updated anime list
-      const animeRes = await fetch('/api/anime');
+      const animeRes = await fetch('/api/anime', {
+        headers: { 'x-user-id': userId }
+      });
       if (animeRes.ok) {
         const data = await animeRes.json();
         set({ anime: data });
@@ -227,6 +254,13 @@ const useAnimeStore = create<AnimeStore>((set, get) => ({
       // Ongoing filter
       if (filters.isOngoing !== undefined && filters.isOngoing !== null) {
         if (item.isOngoing !== filters.isOngoing) return false;
+      }
+
+      // Exact Genres filter
+      if (filters.genres && filters.genres.length > 0) {
+        if (!item.genres) return false;
+        const matchesAll = filters.genres.every(fg => item.genres!.includes(fg));
+        if (!matchesAll) return false;
       }
       
       // Search query filter
