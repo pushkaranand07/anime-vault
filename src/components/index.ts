@@ -6,3 +6,6 @@ export { Header } from './Header';
 export { SkeletonCard } from './SkeletonCard';
 export { DiscoverTab } from './DiscoverTab';
 export { StatsTab } from './StatsTab';
+export { VideoPlayer } from './VideoPlayer';
+export { EpisodeSelector } from './EpisodeSelector';
+export { SubtitleSettingsComponent } from './SubtitleSettings';
